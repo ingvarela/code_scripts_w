@@ -1,0 +1,90 @@
+What to add
+1) New helpers (place near your other text utils)
+Add these two functions (they avoid the vertical OCR cutoff by deriving the label from exactly what was drawn, while preserving normal spaces):
+
+python
+Copy
+Edit
+# Preserve existing spaces/newlines while injecting intra-word spaces INSIDE tokens only
+def inject_intra_preserve_separators(s: str, rng) -> str:
+    parts = re.split(r'(\s+)', s)  # keep separators as tokens
+    out = []
+    for tok in parts:
+        if tok.isspace():
+            out.append(tok)
+        else:
+            if not tok:
+                out.append(tok)
+                continue
+            chars = [tok[0]]
+            for ch in tok[1:]:
+                if ch.isalpha() and rng.random() < LETTER_SPACE_PROB:
+                    chars.append(" ")
+                chars.append(ch)
+            out.append("".join(chars))
+    return "".join(out)
+
+# Build OCR from what was actually drawn (drawn_text) but using clean paragraph spacing
+def derive_expected_ocr_from_drawn(paragraph_clean: str, drawn_text: str) -> str:
+    clean = re.sub(r"\s+", " ", paragraph_clean).strip()
+    vis_chars = re.sub(r"\s+", "", drawn_text)   # all visible non-space glyphs painted
+    target_len = len(vis_chars)
+
+    out = []
+    taken = 0
+    for ch in clean:
+        if ch.isspace():
+            out.append(" ")
+        else:
+            if taken < target_len:
+                out.append(ch)
+                taken += 1
+            else:
+                break
+
+    return re.sub(r"\s+", " ", "".join(out)).strip()
+2) Use one shared layout plan
+Replace your current block that creates render_text_draw and render_text_ocr:
+
+python
+Copy
+Edit
+# Text for drawing (with intra-word spacing)
+paragraph_spaced = inject_intra_word_spaces(paragraph, rng)
+render_text_draw = restructure_paragraph_for_coverage(paragraph_spaced, rng, mode=layout_mode)
+# Text for OCR (no intra-word spaces)
+render_text_ocr  = restructure_paragraph_for_coverage(paragraph, rng, mode=layout_mode)
+with:
+
+python
+Copy
+Edit
+# Build a single layout plan once on CLEAN text
+render_text_plan = restructure_paragraph_for_coverage(paragraph, rng, mode=layout_mode)
+# Visible text: inject intra-word spaces but preserve existing spaces/newlines
+render_text_draw = inject_intra_preserve_separators(render_text_plan, rng)
+# OCR text uses the clean plan
+render_text_ocr  = render_text_plan
+This ensures the newline/phrase structure is identical for draw vs. OCR.
+
+3) After drawing, compute OCR from what was drawn
+Find where you currently build expected_ocr (likely from lines_ocr). Replace that whole bit with:
+
+python
+Copy
+Edit
+# drawn_text is exactly what we painted: "\n".join(lines_draw)
+expected_ocr = derive_expected_ocr_from_drawn(paragraph, drawn_text)
+This guarantees the OCR label covers exactly the visible characters (no more, no less), with normal word spacing.
+
+4) Strict “no cropping” rule (skip if canvas would overflow)
+Locate the part after all transforms (grit, skew, rotate, perspective, optional low-res) where you check the canvas size vs background. Replace any scaling-to-fit with this skip:
+
+python
+Copy
+Edit
+cW, cH = canvas.size
+if cW > W or cH > H:
+    print(f"[skip] Canvas {cW}x{cH} exceeds background {W}x{H} for {synthdog_id}; retrying.")
+    continue
+Also remove any metadata fields tied to that scaling (e.g., fit_scaled_to_bg, fit_scale_factor) if they exist.
