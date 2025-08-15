@@ -1,0 +1,24 @@
+cmake_minimum_required(VERSION 3.10)
+project(tv_api_tester C)
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_EXTENSIONS ON)
+
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(ELEMENTARY REQUIRED elementary)
+pkg_check_modules(CURL REQUIRED libcurl)
+
+include_directories(
+  ${ELEMENTARY_INCLUDE_DIRS}
+  ${CURL_INCLUDE_DIRS}
+  inc
+)
+add_definitions(${ELEMENTARY_CFLAGS_OTHER})
+
+add_executable(tv_api_tester src/main.c)
+target_link_libraries(tv_api_tester
+  ${ELEMENTARY_LIBRARIES}
+  ${CURL_LIBRARIES}
+)
+
+install(TARGETS tv_api_tester DESTINATION bin)
