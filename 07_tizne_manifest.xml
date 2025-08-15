@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest xmlns="http://tizen.org/ns/packages"
+          api-version="9"
+          package="com.example.tvapitester"
+          version="1.0.0">
+  <profile name="tv"/>
+  <feature name="http://tizen.org/feature/profile.tv"/>
+
+  <app id="com.example.tvapitester"
+       type="capp"
+       exec="tv_api_tester"
+       multiple="false"
+       taskmanage="true">
+    <label>TV API Tester</label>
+    <icon>res/icons/app.png</icon>
+
+    <!-- Needed for HTTP/HTTPS requests -->
+    <privileges>
+      <privilege>http://tizen.org/privilege/internet</privilege>
+    </privileges>
+  </app>
+</manifest>
