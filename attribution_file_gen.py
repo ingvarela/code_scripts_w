@@ -5,7 +5,7 @@ Generate an attribution file for reused charts from OWID and OECD.
   1. Our World in Data (CC BY 4.0)
   2. OECD (CC BY 4.0, with restrictions)
 
-- Specifies that images are reused verbatim (unmodified).
+- Specifies that images are reused verbatim (no modifications).
 - Produces ATTRIBUTIONS.txt and ATTRIBUTIONS.json
 """
 
@@ -37,6 +37,14 @@ charts = [
 txt_lines = []
 txt_lines.append("ATTRIBUTION FILE")
 txt_lines.append(f"Generated on {date.today().isoformat()}")
+txt_lines.append("="*60)
+txt_lines.append("")
+txt_lines.append("DISCLAIMER:")
+txt_lines.append("All charts listed below are reused verbatim (no modifications) ")
+txt_lines.append("under the Creative Commons Attribution (CC BY 4.0) license, as ")
+txt_lines.append("specified by the original providers (Our World in Data and OECD).")
+txt_lines.append("No endorsement by the original providers is implied, and logos or ")
+txt_lines.append("visual identities are not used. Attribution is provided as required.")
 txt_lines.append("="*60)
 txt_lines.append("")
 
