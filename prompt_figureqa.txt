@@ -1,0 +1,8 @@
+“Looking at the chart image, write one short yes/no question about the relative value of its colored elements, using the exact color names shown (including multi-word names). Use one of these forms only:
+
+‘Is [COLOR] the minimum?’
+
+‘Is [COLOR1] greater than [COLOR2]?’
+
+‘Is [COLOR] the low median?’
+Choose colors that actually appear in the image, and output just the question—no numbers or explanation.”
