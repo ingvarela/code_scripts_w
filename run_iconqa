@@ -1,0 +1,13 @@
+# mixed set, random grids (1–3 rows, 3–5 cols), repeats allowed (1–4 distinct icons per grid)
+python icon_composer.py --pool ./icons --out ./out --n 150 \
+  --templates row scatter grid:auto --grid-min-rows 1 --grid-max-rows 3 \
+  --grid-min-cols 3 --grid-max-cols 5 --grid-k-min 1 --grid-k-max 4 \
+  --scatter-min 8 --scatter-max 12 --rot-max 8 --bg random
+
+# only grids, forcing “all same icon” per grid
+python icon_composer.py --pool ./icons --out ./out_same --n 60 \
+  --templates grid:auto --grid-k-min 1 --grid-k-max 1
+
+# grids where each image uses 3–4 distinct icons, repeated across cells
+python icon_composer.py --pool ./icons --out ./out_3to4 --n 60 \
+  --templates grid:auto --grid-k-min 3 --grid-k-max 4
