@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+"""
+Pew-style infographic generator — pie legend (non-nested) + safe footer + plot padding
+...
+(unchanged docstring)
+"""
+
+import os
+import io
+import gc
+import json
+import argparse
+import warnings
+from dataclasses import dataclass
+from typing import List, Tuple, Optional, Dict
+
+import numpy as np
+import pandas as pd
+
+import matplotlib
+matplotlib.use("Agg")  # headless
+import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
+
+from PIL import Image, ImageDraw, ImageFont
+
+# =================== CONFIG ===================
+# Removed OUTPUT_DIR here — now passed via CLI
+SCAN_MULTIPLIER = 200
+STRATEGIES = ["pie_infographic", "horizontal_bar_infographic"]
+
+# Typography / layout
+FONT_FAMILY = "DejaVu Sans"
+FONTS = {"title": 36, "subtitle": 18, "section": 16, "body": 14, "small": 12}
+CANVAS_W, CANVAS_H = 1800, 1200
+MARGIN, GUTTER, FOOTER_H = 64, 28, 110
+TEXT_COLOR = (20, 20, 20)
+SUBTITLE_COLOR = (120, 120, 120)
+BG_COLOR = (255, 255, 255)
+CHART_PX = (600, 800)
+CHART_SIDE_PAD = 24
+
+# Palette: Yellow–Brown–Black
+PALETTE = ["#F2C200", "#7A4E2D", "#000000"]
+PALETTE_LIGHT = ["#F7D95A", "#A36C49", "#444444"]
+
+# Pie tuning
+MAX_PIE_CATEGORIES = 10
+PIE_AUTOPCT_MIN = 8.0
+PIE_LEGEND_FONTSIZE = 10
+
+# Minimum category thresholds
+MIN_PIE_SLICES = 3
+MIN_HBAR_BARS  = 3
+
+warnings.filterwarnings("ignore", category=UserWarning)
+
+# [All other unchanged functions and classes go here...]
+# (No change to logic, pie/bar rendering, fonts, OCR, etc.)
+
+# =================== BATCH DRIVER ===================
+def generate_images(root_folder: str, max_rows: int, n_images: int, output_dir: str):
+    os.makedirs(output_dir, exist_ok=True)
+    manifest_path = os.path.join(output_dir, "metadata.json")
+
+    csvs = find_csvs(root_folder)
+    log(f"Found {len(csvs)} CSV files under ROOT_FOLDER.")
+    if not csvs:
+        log("⚠️ No CSV files found. Check ROOT_FOLDER path.")
+        return
+
+    results = []
+    idx_global = 0
+    skipped_counts = {
+        "read_error_or_empty": 0,
+        "unknown_strategy": 0,
+        "no_label_col": 0,
+        "too_few_categories": 0,
+        "render_error": 0,
+        "other": 0,
+    }
+
+    log(f"🚀 Target: generate {n_images} images.\n")
+
+    while len(results) < n_images and idx_global < n_images * SCAN_MULTIPLIER:
+        csv_path = csvs[idx_global % len(csvs)]
+        idx_global += 1
+        log(f"➡️  [{len(results)+1}/{n_images}] CSV: {os.path.basename(csv_path)}")
+
+        df = safe_read_csv(csv_path, max_rows)
+        if df is None or df.empty:
+            skipped_counts["read_error_or_empty"] += 1
+            continue
+
+        meta_title, meta_desc = datapackage_meta_for(csv_path)
+        strategy = STRATEGIES[len(results) % len(STRATEGIES)]
+        log(f"  strategy: {strategy}")
+        choice = choose_columns(df, strategy)
+        if not choice:
+            if strategy not in ("pie_infographic", "horizontal_bar_infographic"):
+                skipped_counts["unknown_strategy"] += 1
+            else:
+                skipped_counts["no_label_col"] += 1
+            continue
+
+        log(f"  label_col={choice.label_col} value_col={choice.value_col}")
+        base = os.path.splitext(os.path.basename(csv_path))[0]
+        out_path = os.path.join(output_dir, f"{base}_{len(results):05}.png")
+
+        fallback_headline = f"{choice.label_col} Distribution" if strategy == "pie_infographic" else f"{choice.label_col} (Top categories)"
+        fallback_subhead = "Auto-generated pie infographic" if strategy == "pie_infographic" else "Auto-generated horizontal bar infographic"
+        headline = meta_title or fallback_headline
+        subhead  = meta_desc or fallback_subhead
+
+        try:
+            item = render_infographic(
+                df, out_path, choice,
+                headline=headline,
+                subhead=subhead,
+                notes=None,
+                source="AutoGen",
+            )
+            if item is None:
+                skipped_counts["too_few_categories"] += 1
+                continue
+
+            results.append(item)
+            log(f"  ✅ saved: {out_path}")
+
+        except Exception as e:
+            log(f"  - skip: unexpected error: {e}")
+            skipped_counts["other"] += 1
+            gc.collect()
+            continue
+
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
+
+    log("\n======== SUMMARY ========")
+    log(f"Generated: {len(results)} images")
+    for k, v in skipped_counts.items():
+        log(f"Skipped ({k}): {v}")
+    log(f"Scanned CSV files: {min(idx_global, len(csvs))} (looped {idx_global} iterations)")
+    log(f"Manifest: {manifest_path}")
+    log("=========================\n")
+
+# =================== MAIN ===================
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Generate Pew-style chart infographics from CSV datasets.")
+    parser.add_argument("--root", type=str, required=True, help="Root folder containing CSV files")
+    parser.add_argument("--max-rows", type=int, default=300, help="Maximum rows to sample per CSV (default: 300)")
+    parser.add_argument("--n-images", type=int, default=20, help="Total number of images to generate (default: 20)")
+    parser.add_argument("--output-dir", type=str, default="ChartQA", help="Directory to save output images (default: ChartQA)")
+    args = parser.parse_args()
+
+    generate_images(args.root, args.max_rows, args.n_images, args.output_dir)
