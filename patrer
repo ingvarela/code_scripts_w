@@ -1,0 +1,10 @@
+# Matches instruction-like phrases whether they appear at the start or after a newline
+INSTRUCTION_PHRASES = [
+    r'fill\s+in\s+the\s+blank',
+    r'provide\s+a\s+short\s+answer\s+to\s+the\s+question',
+    r'provide\s+the\s+correct\s+caption\s+directly',
+]
+
+INSTRUCTION_RE = re.compile(
+    r'(?im)(?:^|(?<=\n))\s*\*{0,2}\s*(?:' + "|".join(INSTRUCTION_PHRASES) + r')\s*\.?\s*\*{0,2}\s*'
+)
