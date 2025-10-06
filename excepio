@@ -1,0 +1,4 @@
+# Remove "Provide a short answer to the question." when it appears after a newline
+PROVIDE_SHORT_ANSWER_RE = re.compile(
+    r'(?im)(?:^|(?<=\n))\s*provide\s+a\s+short\s+answer\s+to\s+the\s+question\.?\s*'
+)
