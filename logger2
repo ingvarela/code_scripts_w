@@ -1,0 +1,54 @@
+#include "api_logger.h"
+#include <app_common.h>
+#include <dlog.h>
+#include <sys/stat.h>
+#include <fstream>
+#include <ctime>
+#include <iostream>
+
+static std::string get_app_rw_path() {
+    // Get app's writable data directory, e.g. /opt/usr/home/owner/apps_rw/org.example.app/data/
+    char *path = app_get_data_path();
+    std::string base = (path != nullptr) ? path : "/tmp/";
+    free(path);
+    return base;
+}
+
+static std::string ensure_log_dir() {
+    std::string base = get_app_rw_path() + "logs/";
+    struct stat st;
+    if (stat(base.c_str(), &st) != 0) {
+        mkdir(base.c_str(), 0755);
+        dlog_print(DLOG_INFO, "API_LOGGER", "Created logs directory: %s", base.c_str());
+    }
+    return base;
+}
+
+void log_api_response(const std::string& url,
+                      const std::string& method,
+                      int status_code,
+                      const std::string& response_body)
+{
+    std::string base = ensure_log_dir();
+    std::string file_path = base + "api_responses.log";
+
+    // Create timestamp
+    std::time_t now = std::time(nullptr);
+    char buf[64];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
+
+    // Write entry to file
+    std::ofstream out(file_path, std::ios::app);
+    if (out.is_open()) {
+        out << "------------------------------------------" << std::endl;
+        out << "[" << buf << "] " << method << " " << url << std::endl;
+        out << "Status: " << status_code << std::endl;
+        out << "Response: " << response_body << std::endl << std::endl;
+        out.close();
+    } else {
+        dlog_print(DLOG_ERROR, "API_LOGGER", "Failed to open log file: %s", file_path.c_str());
+    }
+
+    // Print short summary to Tizen Studio Log Viewer
+    dlog_print(DLOG_INFO, "API_LOGGER", "%s %s [%d]", method.c_str(), url.c_str(), status_code);
+}
