@@ -1,0 +1,19 @@
+#ifndef API_LOGGER_H
+#define API_LOGGER_H
+
+#include <string>
+
+/**
+ * Log an API response to a rotating file inside the app's writable data folder.
+ *
+ * @param url           Full API endpoint
+ * @param method        HTTP method (GET, POST, etc.)
+ * @param status_code   Numeric HTTP status (e.g., 200, 404)
+ * @param response_body Optional: response body or summary
+ */
+void log_api_response(const std::string& url,
+                      const std::string& method,
+                      int status_code,
+                      const std::string& response_body);
+
+#endif // API_LOGGER_H
