@@ -1,0 +1,25 @@
+#include "api_logger.h"
+
+void test_account_login() {
+    int ret_samsung_acc = samsung_connect();  // Call your API
+
+    // Optionally translate return code to human-readable message
+    std::string response_desc;
+    switch (ret_samsung_acc) {
+        case 0:
+            response_desc = "Success: Samsung account connected";
+            break;
+        case -1:
+            response_desc = "Error: Connection failed";
+            break;
+        case -2:
+            response_desc = "Error: Invalid token or credentials";
+            break;
+        default:
+            response_desc = "Unknown error code";
+            break;
+    }
+
+    // Log result
+    log_api_response("samsung_connect", "LIBCALL", ret_samsung_acc, response_desc);
+}
