@@ -1,0 +1,38 @@
+#include <app.h>
+#include <dlog.h>
+#include "api_logger.h"
+
+// Example: simulate an API call and log it
+static void simulate_api_response() {
+    std::string url = "https://api.smartthings.com/v1/devices";
+    std::string method = "GET";
+    int status_code = 200;
+    std::string response_body = "{\"devices\": 4}";
+
+    // Log it
+    log_api_response(url, method, status_code, response_body);
+}
+
+// App create callback
+bool app_create(void *data) {
+    dlog_print(DLOG_INFO, "APP_MAIN", "App created, testing API logger...");
+    simulate_api_response();
+    return true;
+}
+
+void app_control(app_control_h app_control, void *data) { }
+void app_pause(void *data) { }
+void app_resume(void *data) { }
+void app_terminate(void *data) { }
+
+int main(int argc, char *argv[]) {
+    app_event_handler_h handlers[5] = {nullptr,};
+    ui_app_lifecycle_callback_s event_callback = {0,};
+    event_callback.create = app_create;
+    event_callback.terminate = app_terminate;
+    event_callback.pause = app_pause;
+    event_callback.resume = app_resume;
+    event_callback.app_control = app_control;
+
+    return ui_app_main(argc, argv, &event_callback, nullptr);
+}
