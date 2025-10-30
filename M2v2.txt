@@ -1,0 +1,22 @@
+cmake_minimum_required(VERSION 3.10)
+project(ProjectName C)
+
+set(CMAKE_C_STANDARD 99)
+
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(EFL REQUIRED elementary)
+find_library(CURL_LIB curl)
+find_library(CJSON_LIB cjson)
+find_library(STCLIENT_LIB smartthings-client)
+
+include_directories(${EFL_INCLUDE_DIRS} inc)
+
+file(GLOB SRCS src/*.c)
+add_executable(${PROJECT_NAME} ${SRCS})
+
+target_link_libraries(${PROJECT_NAME}
+    ${EFL_LIBRARIES}
+    ${CURL_LIB}
+    ${CJSON_LIB}
+    ${STCLIENT_LIB}
+)
