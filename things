@@ -1,0 +1,1 @@
+https://api.smartthings.com/oauth/authorize?client_id=[clientid]&response_type=code&redirect_uri=https://httpbin.org/get&scope=r:devices:*%20w:devices:*%20x:devices:*%20r:locations:*%20w:locations:*%20r:scenes:*%20x:scenes:*%20r:installedapps:*%20w:installedapps:*
