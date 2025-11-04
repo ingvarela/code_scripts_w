@@ -1,0 +1,2 @@
+set HTTPS_PROXY=http://username:password@proxy.example.com:8080
+set HTTP_PROXY=http://username:password@proxy.example.com:8080
