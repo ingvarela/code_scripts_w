@@ -1,0 +1,102 @@
+static bool take_image_capture(appdata_s *ad, token_data_t *t) {
+    char url[512];
+    snprintf(url, sizeof(url), "%s/devices/%s/commands", API_BASE, t->device_id);
+
+    const char payload[] =
+        "{\"commands\":[{\"component\":\"main\",\"capability\":\"imageCapture\",\"command\":\"take\"}]}";
+
+    // --- 1. Send "take" command ---
+    CURL *curl = curl_easy_init();
+    if (!curl) return false;
+
+    mem_t m = {.buf = calloc(1,1), .len = 0};
+    struct curl_slist *headers = NULL;
+    char auth[512];
+    snprintf(auth, sizeof(auth), "Authorization: Bearer %s", t->access_token);
+    headers = curl_slist_append(headers, auth);
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &m);
+    CURLcode res = curl_easy_perform(curl);
+
+    curl_easy_cleanup(curl);
+    curl_slist_free_all(headers);
+
+    if (res != CURLE_OK) {
+        ui_log(ad, "Capture command failed: %d", res);
+        free(m.buf);
+        return false;
+    }
+    free(m.buf);
+
+    ui_log(ad, "Capture command accepted. Waiting for snapshot...");
+    sleep(8); // give SmartThings time to process capture
+
+    // --- 2. Get latest device status ---
+    snprintf(url, sizeof(url), "%s/devices/%s/status", API_BASE, t->device_id);
+    CURL *curl2 = curl_easy_init();
+    mem_t s = {.buf = calloc(1,1), .len = 0};
+    headers = NULL;
+    headers = curl_slist_append(headers, auth);
+    curl_easy_setopt(curl2, CURLOPT_URL, url);
+    curl_easy_setopt(curl2, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl2, CURLOPT_WRITEFUNCTION, write_cb);
+    curl_easy_setopt(curl2, CURLOPT_WRITEDATA, &s);
+    CURLcode res2 = curl_easy_perform(curl2);
+
+    curl_easy_cleanup(curl2);
+    curl_slist_free_all(headers);
+
+    if (res2 != CURLE_OK) {
+        ui_log(ad, "Failed to fetch device status: %d", res2);
+        free(s.buf);
+        return false;
+    }
+
+    ui_log(ad, "Status JSON received:\n%s", s.buf);
+
+    // --- 3. Parse for "imageCapture.image.value" according to schema ---
+    char image_url[512] = {0};
+
+    // Primary path: main.imageCapture.image.value
+    char *img_val = strstr(s.buf, "\"image\":{\"value\":\"");
+    if (img_val) {
+        img_val += strlen("\"image\":{\"value\":\"");
+        sscanf(img_val, "%511[^\"]", image_url);
+    } else {
+        // Try fallback: camera.imageCapture.image.value
+        char *alt = strstr(s.buf, "\"camera\":{\"imageCapture\":{\"image\":{\"value\":\"");
+        if (alt) {
+            alt += strlen("\"camera\":{\"imageCapture\":{\"image\":{\"value\":\"");
+            sscanf(alt, "%511[^\"]", image_url);
+        }
+    }
+
+    if (strlen(image_url) == 0) {
+        ui_log(ad, "No valid image URL found in SmartThings response. (Maybe value=null)");
+        free(s.buf);
+        return false;
+    }
+
+    ui_log(ad, "Found image URL: %s", image_url);
+
+    // --- 4. Download and display image ---
+    char save_path[512];
+    snprintf(save_path, sizeof(save_path), "%s/capture.jpg", SAVE_FOLDER);
+    bool ok = http_download_file(image_url, t->access_token, save_path);
+    free(s.buf);
+
+    if (ok) {
+        elm_image_file_set(ad->img_view, save_path, NULL);
+        evas_object_show(ad->img_view);
+        ui_log(ad, "Image saved and displayed successfully.");
+    } else {
+        ui_log(ad, "Image download failed.");
+    }
+
+    return ok;
+}
