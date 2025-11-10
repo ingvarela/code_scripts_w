@@ -1,0 +1,234 @@
+#!/usr/bin/env python3
+"""
+SmartThings Token Manager — Auto Exchange + Refresh + Logging
+-------------------------------------------------------------
+Automatically detects if only an authorization code is present,
+exchanges it for access/refresh tokens, saves them, and then
+handles automatic refresh when expired. All API responses are logged.
+"""
+
+import requests
+import json
+import os
+import time
+from datetime import datetime, timedelta
+import urllib3
+
+# Disable SSL warnings if verify=False (for dev use only)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# ==========================================================
+# CONFIGURATION
+# ==========================================================
+TOKEN_FILE = "token.txt"
+LOG_DIR = "logs"
+TOKEN_URL = "https://auth-global.api.smartthings.com/oauth/token"
+API_BASE = "https://api.smartthings.com/v1"
+VERIFY_SSL = False  # ⚠️ set to True for production
+os.makedirs(LOG_DIR, exist_ok=True)
+
+
+# ==========================================================
+# LOGGING & FILE HELPERS
+# ==========================================================
+def log_json(data, prefix):
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = os.path.join(LOG_DIR, f"{prefix}_{ts}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    print(f"🪵 Log saved: {path}")
+    return path
+
+
+def read_kv_file(path):
+    creds = {}
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Missing token file: {path}")
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            if "=" in line:
+                k, v = line.strip().split("=", 1)
+                creds[k.strip()] = v.strip()
+    return creds
+
+
+def write_kv_file(path, data):
+    with open(path, "w", encoding="utf-8") as f:
+        for k, v in data.items():
+            f.write(f"{k}={v}\n")
+    print(f"💾 Updated {path}")
+
+
+# ==========================================================
+# TOKEN MANAGEMENT
+# ==========================================================
+def exchange_code_for_tokens(creds):
+    """Exchange authorization_code for access/refresh tokens."""
+    print("🔑 Exchanging authorization code for new tokens...")
+    data = {
+        "grant_type": "authorization_code",
+        "client_id": creds["client_id"],
+        "client_secret": creds["client_secret"],
+        "code": creds["authorization_code"],
+        "redirect_uri": creds["redirect_uri"],
+    }
+
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    resp = requests.post(TOKEN_URL, data=data, headers=headers, verify=VERIFY_SSL)
+
+    if resp.status_code == 200:
+        tokens = resp.json()
+        print("✅ Token exchange successful.")
+        log_json(tokens, "token_exchange")
+
+        creds.pop("authorization_code", None)
+        creds.update({
+            "access_token": tokens.get("access_token", ""),
+            "refresh_token": tokens.get("refresh_token", ""),
+            "expires_in": str(tokens.get("expires_in", "86400")),
+            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        })
+        write_kv_file(TOKEN_FILE, creds)
+        return creds
+    else:
+        print(f"❌ Exchange failed ({resp.status_code}): {resp.text}")
+        log_json({"status": resp.status_code, "text": resp.text}, "token_exchange_error")
+        raise RuntimeError("Failed to exchange authorization code")
+
+
+def refresh_token(creds):
+    """Perform refresh_token grant."""
+    print("🔁 Refreshing token...")
+    data = {
+        "grant_type": "refresh_token",
+        "client_id": creds["client_id"],
+        "client_secret": creds["client_secret"],
+        "refresh_token": creds["refresh_token"]
+    }
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    resp = requests.post(TOKEN_URL, data=data, headers=headers, verify=VERIFY_SSL)
+
+    if resp.status_code == 200:
+        tokens = resp.json()
+        print("✅ Token refresh successful.")
+        log_json(tokens, "token_refresh")
+
+        creds.update({
+            "access_token": tokens.get("access_token", ""),
+            "refresh_token": tokens.get("refresh_token", creds.get("refresh_token")),
+            "expires_in": str(tokens.get("expires_in", "86400")),
+            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        })
+        write_kv_file(TOKEN_FILE, creds)
+        return creds
+    else:
+        print(f"❌ Refresh failed ({resp.status_code}): {resp.text}")
+        log_json({"status": resp.status_code, "text": resp.text}, "token_refresh_error")
+        raise RuntimeError("Failed to refresh token")
+
+
+def get_token_expiry(creds):
+    try:
+        updated = datetime.strptime(creds["updated_at"], "%Y-%m-%d %H:%M:%S")
+        return updated + timedelta(seconds=int(creds["expires_in"]))
+    except Exception:
+        return None
+
+
+def is_token_expired(creds):
+    expiry = get_token_expiry(creds)
+    if not expiry:
+        return True
+    remaining = (expiry - datetime.now()).total_seconds()
+    print(f"⏱ Token expires in {int(remaining)} seconds.")
+    return remaining < 60
+
+
+def ensure_valid_token(creds):
+    """Ensures a valid token — refreshes or exchanges as needed."""
+    # Case 1: Only authorization_code is present
+    if "authorization_code" in creds and "access_token" not in creds:
+        print("⚙️ Found authorization_code but no tokens — exchanging...")
+        creds = exchange_code_for_tokens(creds)
+    # Case 2: Existing tokens but expired
+    elif is_token_expired(creds):
+        print("⚠️ Token expired — refreshing...")
+        creds = refresh_token(creds)
+    else:
+        print("✅ Token is valid.")
+    return creds
+
+
+# ==========================================================
+# API WRAPPERS
+# ==========================================================
+def safe_json(resp):
+    try:
+        return resp.json()
+    except Exception:
+        return {"raw": resp.text}
+
+
+def api_request(method, path, creds, data=None, retry=True):
+    creds = ensure_valid_token(creds)
+    url = f"{API_BASE}{path}"
+    headers = {
+        "Authorization": f"Bearer {creds['access_token']}",
+        "Content-Type": "application/json"
+    }
+
+    print(f"🌐 {method} {url}")
+    resp = requests.request(method, url, headers=headers, json=data, verify=VERIFY_SSL)
+
+    log_json({
+        "method": method,
+        "url": url,
+        "status_code": resp.status_code,
+        "response": safe_json(resp),
+        "timestamp": datetime.now().isoformat()
+    }, "api_response")
+
+    if resp.status_code == 401 and retry:
+        print("⚠️ 401 Unauthorized — refreshing and retrying...")
+        creds = refresh_token(creds)
+        return api_request(method, path, creds, data, retry=False)
+
+    if resp.ok:
+        print("✅ Request successful.")
+        return safe_json(resp)
+    else:
+        print(f"❌ Request failed ({resp.status_code})")
+        return safe_json(resp)
+
+
+def api_get(path, creds):
+    return api_request("GET", path, creds)
+
+
+def api_post(path, data, creds):
+    return api_request("POST", path, creds)
+
+
+# ==========================================================
+# MAIN
+# ==========================================================
+if __name__ == "__main__":
+    try:
+        creds = read_kv_file(TOKEN_FILE)
+        creds = ensure_valid_token(creds)
+
+        # Example: list devices
+        devices = api_get("/devices", creds)
+        if devices:
+            print(f"📦 Found {len(devices.get('items', []))} devices.")
+
+        # Example command (uncomment when needed)
+        # command = {
+        #     "commands": [
+        #         {"component": "main", "capability": "imageCapture", "command": "take"}
+        #     ]
+        # }
+        # api_post(f"/devices/{device_id}/commands", command, creds)
+
+    except Exception as e:
+        print(f"⚠️ Error: {e}")
